@@ -1,8 +1,10 @@
 use crate::error;
 use reqwest::header::{HeaderName, ACCEPT, CONTENT_TYPE};
+use serde::Deserialize;
 use serde_json::json;
 use tracing::info;
 
+#[derive(Clone)]
 pub struct User {
     api_key: String,
     partition: String,
@@ -152,14 +154,14 @@ pub struct AuthorizeInfo {
 }
 
 impl AuthorizeInfo {
-    pub fn new(user: User, headers: AuthorizeHeaders) -> Self {
+    pub fn new(user: &User, headers: AuthorizeHeaders) -> Self {
         AuthorizeInfo {
-            user,
+            user: user.clone(),
             headers,
         }
     }
 
-    pub async fn authorize(&self, url: &str) -> Result<String, error::LinkError> {
+    pub async fn authorize(&self, url: &str) -> Result<AuthResponse, error::LinkError> {
         let client = reqwest::Client::new();
         info!("Client created.");
         let username = format!("{}@{}", self.user.name, self.user.host);
@@ -176,7 +178,146 @@ impl AuthorizeInfo {
             .body(body.to_string())
             .send()
             .await?;
-        Ok("Token".to_string())
+        println!("Status: {}", res.status());
+        match &res.status() {
+            &reqwest::StatusCode::OK => Ok(res.json::<AuthResponse>().await?),
+            _ => Err(error::LinkError::AuthError),
+        }
+    }
+}
 
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "PascalCase")]
+pub struct AuthResponse {
+    additional_info: String,
+    success: bool,
+    #[serde(rename(deserialize = "APIKey"))]
+    api_key: String,
+    user_id: i32,
+    message: String,
+}
+
+impl AuthResponse {
+    pub fn info(&self) -> String {
+        self.additional_info.clone()
+    }
+    pub fn success(&self) -> bool {
+        self.success
+    }
+    pub fn api_key(&self) -> String {
+        self.api_key.clone()
+    }
+    pub fn id(&self) -> i32 {
+        self.user_id
+    }
+    pub fn message(&self) -> String {
+        self.message.clone()
+    }
+}
+
+pub struct AuthorizedUser {
+    api_key: String,
+    partition: String,
+    user_api_key: String,
+}
+
+impl AuthorizedUser {
+    pub fn new(user: &User, auth: &AuthResponse) -> Self {
+        AuthorizedUser {
+            api_key: user.api_key.clone(),
+            partition: user.partition.clone(),
+            user_api_key: auth.api_key.clone(),
+        }
+    }
+
+    pub fn api_key(&self) -> String {
+        self.api_key.clone()
+    }
+
+    pub fn partition(&self) -> String {
+        self.partition.clone()
+    }
+
+    pub fn user_api_key(&self) -> String {
+        self.user_api_key.clone()
+    }
+}
+
+#[derive(Default)]
+pub struct DocQuery {
+    top: Option<i32>,
+    skip: Option<i32>,
+    filter: Option<String>,
+    orderby: Option<String>,
+    inlinecount: Option<String>,
+    expand: Option<String>,
+}
+
+impl DocQuery {
+    pub fn new() -> Self {
+        DocQuery::default()
+    }
+
+    pub fn top(&mut self, value: i32) -> &mut Self {
+        self.top = Some(value);
+        self
+    }
+
+    pub fn skip(&mut self, value: i32) -> &mut Self {
+        self.skip = Some(value);
+        self
+    }
+
+    pub fn filter(&mut self, value: &str) -> &mut Self {
+        self.filter = Some(value.to_owned());
+        self
+    }
+
+    pub fn orderby(&mut self, value: &str) -> &mut Self {
+        self.orderby = Some(value.to_owned());
+        self
+    }
+
+    pub fn inlinecount(&mut self, value: &str) -> &mut Self {
+        self.inlinecount = Some(value.to_owned());
+        self
+    }
+
+    pub fn expand(&mut self, value: &str) -> &mut Self {
+        self.expand = Some(value.to_owned());
+        self
+    }
+
+    pub fn query(&self) -> String {
+        let mut args = Vec::new();
+        if let Some(arg) = self.top {
+            args.push(format!("%24top={}", arg));
+        }
+        if let Some(arg) = self.skip {
+            args.push(format!("%24skip={}", arg));
+        }
+        if let Some(arg) = self.filter.clone() {
+            args.push(format!("%24filter={}", arg));
+        }
+        if let Some(arg) = self.orderby.clone() {
+            args.push(format!("%24orderby={}", arg));
+        }
+        if let Some(arg) = self.inlinecount.clone() {
+            args.push(format!("%24inlinecount={}", arg));
+        }
+        if let Some(arg) = self.expand.clone() {
+            args.push(format!("%24expand={}", arg));
+        }
+        let mut query = "?".to_string();
+        let mut i = 0;
+        for arg in args {
+            if i == 0 {
+                query.push_str(&arg);
+            } else {
+                query.push_str(&format!("&{}", arg));
+            }
+            i += 1;
+        }
+        query
     }
 }
