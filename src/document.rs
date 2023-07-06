@@ -2,6 +2,7 @@ use crate::authorize::AuthorizedUser;
 use crate::error;
 use reqwest::header::{HeaderName, ACCEPT};
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Clone, Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
@@ -34,6 +35,24 @@ pub struct Document {
     last_modified_on: Option<String>,
     show_archives: Option<bool>,
     show_in_rss_feed: Option<bool>,
+}
+
+impl Document {
+    pub fn id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn name(&self) -> String {
+        self.name.to_owned()
+    }
+
+    pub fn file_size(&self) -> Option<f32> {
+        self.file_size.clone()
+    }
+
+    pub fn url(&self) -> Option<String> {
+        self.url.clone()
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -77,6 +96,18 @@ impl Documents {
 
     pub fn source(&self) -> Option<Vec<Document>> {
         self.source.clone()
+    }
+
+    pub fn total_size(&self) -> f32 {
+        let mut size = 0.;
+        if let Some(docs) = self.source() {
+            for doc in docs {
+                if let Some(value) = doc.file_size() {
+                    size += value;
+                }
+            }
+        }
+        size
     }
 }
 
@@ -228,6 +259,42 @@ impl DocInfo {
     }
 }
 
+#[derive(Debug)]
+pub struct DocumentLinks {
+    links: HashMap<String, std::path::PathBuf>,
+}
+
+impl DocumentLinks {
+    pub fn new(links: HashMap<String, std::path::PathBuf>) -> Self {
+        DocumentLinks { links }
+    }
+
+    pub fn ref_links(&self) -> &HashMap<String, std::path::PathBuf> {
+        &self.links
+    }
+}
+
+impl Default for DocumentLinks {
+    fn default() -> Self {
+        let links = HashMap::<String, std::path::PathBuf>::new();
+        DocumentLinks { links }
+    }
+}
+
+impl From<&Documents> for DocumentLinks {
+    fn from(docs: &Documents) -> Self {
+        let mut links = HashMap::<String, std::path::PathBuf>::new();
+        if let Some(documents) = docs.source() {
+            for doc in documents {
+                if let Some(url) = doc.url() {
+                    links.insert(doc.name(), url.into());
+                }
+            }
+        }
+        DocumentLinks::new(links)
+    }
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct Folders {
@@ -281,9 +348,9 @@ impl Folders {
         let res = client
             .get(info.query())
             .header(ACCEPT, "application/json")
-            .header(info.headers.clone().api_key(), user.api_key())
-            .header(info.headers.clone().partition(), user.partition())
-            .header(info.headers.clone().user_api_key(), user.user_api_key())
+            .header(info.headers().api_key(), user.api_key())
+            .header(info.headers().partition(), user.partition())
+            .header(info.headers().user_api_key(), user.user_api_key())
             .send()
             .await?;
         match &res.status() {
@@ -302,5 +369,17 @@ impl Folders {
 
     pub fn source(&self) -> Option<Vec<Folder>> {
         self.source.clone()
+    }
+
+    pub fn get_id(&self, name: &str) -> Option<i32> {
+        let mut id = None;
+        if let Some(folders) = self.source() {
+            for folder in folders {
+                if folder.name == name {
+                    id = folder.id;
+                }
+            }
+        }
+        id
     }
 }

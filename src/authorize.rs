@@ -178,7 +178,7 @@ impl AuthorizeInfo {
             .body(body.to_string())
             .send()
             .await?;
-        println!("Status: {}", res.status());
+        info!("Status: {}", res.status());
         match &res.status() {
             &reqwest::StatusCode::OK => Ok(res.json::<AuthResponse>().await?),
             _ => Err(error::LinkError::AuthError),
@@ -240,84 +240,5 @@ impl AuthorizedUser {
 
     pub fn user_api_key(&self) -> String {
         self.user_api_key.clone()
-    }
-}
-
-#[derive(Default)]
-pub struct DocQuery {
-    top: Option<i32>,
-    skip: Option<i32>,
-    filter: Option<String>,
-    orderby: Option<String>,
-    inlinecount: Option<String>,
-    expand: Option<String>,
-}
-
-impl DocQuery {
-    pub fn new() -> Self {
-        DocQuery::default()
-    }
-
-    pub fn top(&mut self, value: i32) -> &mut Self {
-        self.top = Some(value);
-        self
-    }
-
-    pub fn skip(&mut self, value: i32) -> &mut Self {
-        self.skip = Some(value);
-        self
-    }
-
-    pub fn filter(&mut self, value: &str) -> &mut Self {
-        self.filter = Some(value.to_owned());
-        self
-    }
-
-    pub fn orderby(&mut self, value: &str) -> &mut Self {
-        self.orderby = Some(value.to_owned());
-        self
-    }
-
-    pub fn inlinecount(&mut self, value: &str) -> &mut Self {
-        self.inlinecount = Some(value.to_owned());
-        self
-    }
-
-    pub fn expand(&mut self, value: &str) -> &mut Self {
-        self.expand = Some(value.to_owned());
-        self
-    }
-
-    pub fn query(&self) -> String {
-        let mut args = Vec::new();
-        if let Some(arg) = self.top {
-            args.push(format!("%24top={}", arg));
-        }
-        if let Some(arg) = self.skip {
-            args.push(format!("%24skip={}", arg));
-        }
-        if let Some(arg) = self.filter.clone() {
-            args.push(format!("%24filter={}", arg));
-        }
-        if let Some(arg) = self.orderby.clone() {
-            args.push(format!("%24orderby={}", arg));
-        }
-        if let Some(arg) = self.inlinecount.clone() {
-            args.push(format!("%24inlinecount={}", arg));
-        }
-        if let Some(arg) = self.expand.clone() {
-            args.push(format!("%24expand={}", arg));
-        }
-        let mut query = "?".to_string();
-        let mut i = 0;
-        for arg in args {
-            if i == 0 {
-                query.push_str(&arg);
-            } else {
-                query.push_str(&format!("&{}", arg));
-            }
-            i += 1;
-        }
-        query
     }
 }
