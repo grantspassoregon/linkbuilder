@@ -1,8 +1,13 @@
-use crate::{document, error, authorize};
+use crate::{authorize, document, error};
+use data_encoding::BASE64;
+use pdf::file;
 use reqwest::header::{HeaderName, ACCEPT, CONTENT_TYPE};
+use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
-use serde_json::json;
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::Read;
 use tracing::info;
 
 #[derive(Debug)]
@@ -46,24 +51,40 @@ impl FileNames {
         FileNames::new(diff)
     }
 
-    pub async fn upload(&self, url: &str, info: &document::DocInfo, user: &authorize::AuthorizedUser, id: i32) -> Result<(), error::LinkError> {
-        let file_type = ".pdf";
-        let convert = false;
-        let show_archives = false;
+    pub async fn upload(
+        &self,
+        url: &str,
+        info: &document::DocInfo,
+        user: &authorize::AuthorizedUser,
+        id: i32,
+    ) -> Result<(), error::LinkError> {
         let client = reqwest::Client::new();
         info!("Client created.");
 
         for (name, path) in self.names() {
+            let mut file = File::open(path)?;
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+
+            // let file = file::FileOptions::cached().open(&path).unwrap();
+            // if let Some(ref info) = file.trailer.info_dict {
+            //     let title = info.get("Title").and_then(|p| p.to_string_lossy().ok());
+            //     let author = info.get("Author").and_then(|p| p.to_string_lossy().ok());
+            // }
+            let enc = BASE64.encode(&data);
+            // let mut backup = File::create("p:/encode.txt")?;
+            // backup.write_all(&enc.as_bytes())?;
+
             let body = json!({
-                "Name": "2017-2314",
-                "FileType": file_type,
+                "Name": name,
+                "FileName": format!("{}.pdf", name),
+                "File": format!("{}", enc),
                 "FolderId": id,
-                "FileName": "2017-2314.pdf",
-                "ConvertToPdf": convert,
-                "File": "p:\\fila\\2017-2314.pdf",
-                "IsVisible": false,
-                "ShowArchives": show_archives
+                "Status": "Published",
+                "ConvertToPdf": "false",
+                "IsVisible": "false",
             });
+            info!("Body is: {}", &body);
 
             let res = client
                 .post(url)
@@ -73,17 +94,18 @@ impl FileNames {
                 .header(info.headers().partition(), user.partition())
                 .header(info.headers().user_api_key(), user.user_api_key())
                 .body(body.to_string())
-            //     .build();
-            // info!("Response url: {:?}", res.unwrap().url());
+                //     .build();
+                // info!("Response url: {:?}", res.unwrap().url());
                 .send()
                 .await?;
             info!("Status: {}", res.status());
             let status = match &res.status() {
                 &reqwest::StatusCode::OK => Ok(res.json().await?),
+                &reqwest::StatusCode::CREATED => Ok(res.json().await?),
                 _ => {
                     info!("Response: {:?}", res.text().await?);
                     Err(error::LinkError::AuthError)
-                },
+                }
             };
             info!("Status: {:?}", status);
         }

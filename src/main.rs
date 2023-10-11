@@ -1,5 +1,15 @@
+use clap::Parser;
 use linkbuilder::{authorize, document, error, file};
 use tracing::{info, trace};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short = 'c', long, help = "Command to execute.")]
+    command: String,
+    #[arg(short = 'p', long, help = "Parameter for command.")]
+    param: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), error::LinkError> {
@@ -17,13 +27,12 @@ async fn main() -> Result<(), error::LinkError> {
     let password = std::env::var("PASSWORD")?;
     let host = std::env::var("HOST")?;
 
-    let notifs = std::path::PathBuf::from(std::env::var("NOTIFICATION")?);
-    let fila = std::path::PathBuf::from(std::env::var("FEE_IN_LIEU")?);
+    // let notifs = std::path::PathBuf::from(std::env::var("NOTIFICATION")?);
+    // let fila = std::path::PathBuf::from(std::env::var("FEE_IN_LIEU")?);
     trace!("Environmental variables loaded.");
 
-    let names = file::FileNames::from_path("p:/fila".into())?;
-    info!("Names read: {:?}", names.names().len());
-
+    info!("Authorizing user...");
+    trace!("Creating user from environmental variables.");
     let user = authorize::User::new()
         .api_key(&api_key)
         .partition(&partition)
@@ -32,49 +41,105 @@ async fn main() -> Result<(), error::LinkError> {
         .host(&host)
         .build()?;
 
+    trace!("Preparing authorization headers.");
     let headers = authorize::AuthorizeHeaders::default();
-    let url = std::env::var("AUTHENTICATE")?;
+    trace!("Authorizing user.");
     let auth_info = authorize::AuthorizeInfo::new(&user, headers);
+    let url = std::env::var("AUTHENTICATE")?;
     let auth_res = auth_info.authorize(&url).await?;
     info!("Authorization successful for user {}.", &auth_res.id());
+    trace!("Recording session id of user.");
     let auth_user = authorize::AuthorizedUser::new(&user, &auth_res);
 
-    let doc_header = document::DocumentHeaders::default();
-    let url = std::env::var("FOLDER")?;
-    let mut args = document::DocQuery::new();
-    // args.inlinecount("allpages").filter("FolderId eq 1797");
-    args.inlinecount("allpages");
-    let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-    let folders = document::Folders::query(&doc_info, &auth_user).await?;
+    let cli = Cli::parse();
+    match cli.command.as_str() {
+        "delete_folder_content" => {
+            trace!("Preparing document center headers.");
+            let doc_header = document::DocumentHeaders::default();
+            trace!("Setting query parameters for document center request.");
+            let mut args = document::DocQuery::new();
+            trace!("Returns all matches on server.");
+            args.inlinecount("allpages");
+            let url = std::env::var("FOLDER")?;
+            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+            trace!("Set up query data for folders.");
+            let folders = document::Folders::query(&doc_info, &auth_user).await?;
 
-    let url = std::env::var("DOCUMENT")?;
-    // if let Some(id) = folders.get_id("Fee in Lieu") {
-    if let Some(id) = folders.get_id("Fee in Lieu") {
-        info!("Folder id: {:?}", id);
-        args.filter(&format!("FolderId eq {}", id));
-        let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-        let docs = document::Documents::query(&doc_info, &auth_user).await?;
-        info!("Total size: {}", docs.total_size());
-        let links = document::DocumentLinks::from(&docs);
-        info!("Links read: {:?}", links.ref_links().len());
-        let diff = names.not_in(&links);
-        info!("Names not in doc links: {:?}", diff.names().len());
-        // if let Some(source) = docs.source() {
-        //     info!("Example file: {:?}", source[0]);
-        // }
-        diff.upload(&url, &doc_info, &auth_user, id).await?;
-        info!("upload attempted.")
+            trace!("Reading files in source directory.");
+            let names = file::FileNames::from_path("p:/fila".into())?;
+            trace!("Names read: {:?}", names.names().len());
 
-    } else {
-        info!("Folder not present.");
-    };
+            trace!("Search for docs in specified folder.");
+            if let Some(id) = folders.get_id(&cli.param) {
+                info!("Folder id: {:?}", id);
+                trace!("Specify folder for search.");
+                args.filter(&format!("FolderId eq {}", id));
+                trace!("Querying documents in folder.");
+                let url = std::env::var("DOCUMENT")?;
+                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+                let docs = document::Documents::query(&doc_info, &auth_user).await?;
+                info!("Total size of documents in folder: {}", docs.total_size());
+                let links = document::DocumentLinks::from(&docs);
+                info!("Links read: {:?}", links.ref_links().len());
+                info!("Names found: {:?}", links.ref_links().keys());
+                trace!("Comparing names of docs in web folder to names in local folder.");
+                let diff = names.not_in(&links);
+                info!("Local names not in web folder: {:?}", diff.names().len());
+                // diff.upload(&url, &doc_info, &auth_user, id).await?;
+            } else {
+                info!("Folder not present.");
+            };
+        }
+        "sync_folder" => {}
+        _ => {}
+    }
+
+    // trace!("Reading files in source directory.");
+    // let names = file::FileNames::from_path("p:/fila".into())?;
+    // trace!("Names read: {:?}", names.names().len());
+    //
+    //
+    // trace!("Preparing document center headers.");
+    // let doc_header = document::DocumentHeaders::default();
+    // trace!("Setting query parameters for document center request.");
+    // let mut args = document::DocQuery::new();
+    // trace!("Returns all matches on server.");
+    // args.inlinecount("allpages");
+    // let url = std::env::var("FOLDER")?;
+    // let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+    // trace!("Set up query data for folders.");
+    // let folders = document::Folders::query(&doc_info, &auth_user).await?;
+
+    // trace!("Count total documents on website and total size.");
+    // let url = std::env::var("DOCUMENT")?;
+    // let doc_info = document::DocInfo::new(&doc_header, &args, &url);
     // let docs = document::Documents::query(&doc_info, &auth_user).await?;
     // if let Some(value) = docs.total_count() {
-    //     println!("Total count: {}", value);
+    //     info!("Total documents on website: {}", value);
     // }
-    // if let Some(value) = docs.source() {
-    //     println!("Docs: {}", value.len());
-    // }
+    // info!("Total size of documents on site: {}", docs.total_size());
+
+    // trace!("Search for docs in specified folder.");
+    // if let Some(id) = folders.get_id("Fee in Lieu") {
+    //     info!("Folder id: {:?}", id);
+    //     trace!("Specify folder for search.");
+    //     args.filter(&format!("FolderId eq {}", id));
+    //     trace!("Querying documents in folder.");
+    //     let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+    //     let docs = document::Documents::query(&doc_info, &auth_user).await?;
+    //     info!("Total size of documents in folder: {}", docs.total_size());
+    //     let links = document::DocumentLinks::from(&docs);
+    //     info!("Links read: {:?}", links.ref_links().len());
+    //     info!("Names found: {:?}", links.ref_links().keys());
+    //     trace!("Comparing names of docs in web folder to names in local folder.");
+    //     let diff = names.not_in(&links);
+    //     info!("Local names not in web folder: {:?}", diff.names().len());
+    //     trace!("Uploading missing files to web folder.");
+    //     diff.upload(&url, &doc_info, &auth_user, id).await?;
+    //     info!("upload attempted.")
+    // } else {
+    //     info!("Folder not present.");
+    // };
 
     Ok(())
 }

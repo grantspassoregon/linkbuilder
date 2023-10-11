@@ -53,6 +53,10 @@ impl Document {
     pub fn url(&self) -> Option<String> {
         self.url.clone()
     }
+
+    pub fn url_ref(&self) -> &Option<String> {
+        &self.url
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -96,6 +100,10 @@ impl Documents {
 
     pub fn source(&self) -> Option<Vec<Document>> {
         self.source.clone()
+    }
+
+    pub fn source_ref(&self) -> &Option<Vec<Document>> {
+        &self.source
     }
 
     pub fn total_size(&self) -> f32 {
@@ -284,9 +292,9 @@ impl Default for DocumentLinks {
 impl From<&Documents> for DocumentLinks {
     fn from(docs: &Documents) -> Self {
         let mut links = HashMap::<String, std::path::PathBuf>::new();
-        if let Some(documents) = docs.source() {
+        if let Some(documents) = docs.source_ref() {
             for doc in documents {
-                if let Some(url) = doc.url() {
+                if let Some(url) = doc.url_ref() {
                     links.insert(doc.name(), url.into());
                 }
             }
