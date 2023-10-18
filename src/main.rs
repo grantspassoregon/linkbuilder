@@ -1,5 +1,6 @@
+#[doc = include_str!("../README.md")]
 use clap::Parser;
-use linkbuilder::{authorize, document, error, export, file, report};
+use linkbuilder::prelude::*;
 use tracing::{info, trace, warn};
 
 #[derive(Parser)]
@@ -16,7 +17,7 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), error::LinkError> {
+async fn main() -> LinkResult<()> {
     if let Ok(()) = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .try_init()
@@ -34,7 +35,7 @@ async fn main() -> Result<(), error::LinkError> {
 
     info!("Authorizing user...");
     trace!("Creating user from environmental variables.");
-    let user = authorize::User::new()
+    let user = User::new()
         .api_key(&api_key)
         .partition(&partition)
         .name(&name)
@@ -43,19 +44,19 @@ async fn main() -> Result<(), error::LinkError> {
         .build()?;
 
     trace!("Preparing authorization headers.");
-    let headers = authorize::AuthorizeHeaders::default();
+    let headers = AuthorizeHeaders::default();
     trace!("Authorizing user.");
-    let auth_info = authorize::AuthorizeInfo::new(&user, headers);
+    let auth_info = AuthorizeInfo::new(&user, headers);
     let url = std::env::var("AUTHENTICATE")?;
     let auth_res = auth_info.authorize(&url).await?;
     info!("Authorization successful for user {}.", &auth_res.id());
     trace!("Recording session id of user.");
-    let auth_user = authorize::AuthorizedUser::new(&user, &auth_res);
+    let auth_user = AuthorizedUser::new(&user, &auth_res);
 
     trace!("Preparing document center headers.");
-    let doc_header = document::DocumentHeaders::default();
+    let doc_header = DocumentHeaders::default();
     trace!("Setting query parameters for document center request.");
-    let mut args = document::DocQuery::new();
+    let mut args = DocQuery::new();
     trace!("Returns all matches on server.");
     args.inlinecount("allpages");
 
@@ -63,19 +64,19 @@ async fn main() -> Result<(), error::LinkError> {
     match cli.command.as_str() {
         "get_links" => {
             let url = std::env::var("FOLDER")?;
-            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+            let doc_info = DocInfo::new(&doc_header, &args, &url);
             trace!("Set up query data for folders.");
-            let folders = document::Folders::query(&doc_info, &auth_user).await?;
+            let folders = Folders::query(&doc_info, &auth_user).await?;
             trace!("Search for docs in specified folder.");
             let url = std::env::var("DOCUMENT")?;
             if let Some(id) = folders.get_id("Fee in Lieu") {
                 trace!("Folder id: {:?}", id);
                 trace!("Specify folder for search.");
                 args.filter(&format!("FolderId eq {}", id));
-                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                let docs = document::Documents::query(&doc_info, &auth_user).await?;
-                let links = document::DocumentLinks::from(&docs);
-                let mut linked = export::WebLinks::from(&links);
+                let doc_info = DocInfo::new(&doc_header, &args, &url);
+                let docs = Documents::query(&doc_info, &auth_user).await?;
+                let links = DocumentLinks::from(&docs);
+                let mut linked = WebLinks::from(&links);
                 if let Some(path) = cli.output.clone() {
                     let link_path = format!("{}/fila_links.csv", path.clone());
                     linked.to_csv(&link_path)?;
@@ -90,10 +91,10 @@ async fn main() -> Result<(), error::LinkError> {
                 trace!("Folder id: {:?}", id);
                 trace!("Specify folder for search.");
                 args.filter(&format!("FolderId eq {}", id));
-                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                let docs = document::Documents::query(&doc_info, &auth_user).await?;
-                let links = document::DocumentLinks::from(&docs);
-                let mut linked = export::WebLinks::from(&links);
+                let doc_info = DocInfo::new(&doc_header, &args, &url);
+                let docs = Documents::query(&doc_info, &auth_user).await?;
+                let links = DocumentLinks::from(&docs);
+                let mut linked = WebLinks::from(&links);
                 if let Some(path) = cli.output.clone() {
                     let link_path = format!("{}/unrecorded_parcels_links.csv", path.clone());
                     linked.to_csv(&link_path)?;
@@ -108,10 +109,10 @@ async fn main() -> Result<(), error::LinkError> {
                 trace!("Folder id: {:?}", id);
                 trace!("Specify folder for search.");
                 args.filter(&format!("FolderId eq {}", id));
-                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                let docs = document::Documents::query(&doc_info, &auth_user).await?;
-                let links = document::DocumentLinks::from(&docs);
-                let mut linked = export::WebLinks::from(&links);
+                let doc_info = DocInfo::new(&doc_header, &args, &url);
+                let docs = Documents::query(&doc_info, &auth_user).await?;
+                let links = DocumentLinks::from(&docs);
+                let mut linked = WebLinks::from(&links);
                 if let Some(path) = cli.output.clone() {
                     let link_path = format!("{}/service_annexation_links.csv", path.clone());
                     linked.to_csv(&link_path)?;
@@ -126,10 +127,10 @@ async fn main() -> Result<(), error::LinkError> {
                 trace!("Folder id: {:?}", id);
                 trace!("Specify folder for search.");
                 args.filter(&format!("FolderId eq {}", id));
-                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                let docs = document::Documents::query(&doc_info, &auth_user).await?;
-                let links = document::DocumentLinks::from(&docs);
-                let mut linked = export::WebLinks::from(&links);
+                let doc_info = DocInfo::new(&doc_header, &args, &url);
+                let docs = Documents::query(&doc_info, &auth_user).await?;
+                let links = DocumentLinks::from(&docs);
+                let mut linked = WebLinks::from(&links);
                 if let Some(path) = cli.output.clone() {
                     let link_path = format!("{}/deferred_development_links.csv", path.clone());
                     linked.to_csv(&link_path)?;
@@ -144,10 +145,10 @@ async fn main() -> Result<(), error::LinkError> {
                 trace!("Folder id: {:?}", id);
                 trace!("Specify folder for search.");
                 args.filter(&format!("FolderId eq {}", id));
-                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                let docs = document::Documents::query(&doc_info, &auth_user).await?;
-                let links = document::DocumentLinks::from(&docs);
-                let mut linked = export::WebLinks::from(&links);
+                let doc_info = DocInfo::new(&doc_header, &args, &url);
+                let docs = Documents::query(&doc_info, &auth_user).await?;
+                let links = DocumentLinks::from(&docs);
+                let mut linked = WebLinks::from(&links);
                 if let Some(path) = cli.output {
                     let link_path = format!("{}/advance_finance_links.csv", path.clone());
                     linked.to_csv(&link_path)?;
@@ -161,13 +162,13 @@ async fn main() -> Result<(), error::LinkError> {
         }
         "sync_folder" => {
             let url = std::env::var("FOLDER")?;
-            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+            let doc_info = DocInfo::new(&doc_header, &args, &url);
             trace!("Set up query data for folders.");
-            let folders = document::Folders::query(&doc_info, &auth_user).await?;
+            let folders = Folders::query(&doc_info, &auth_user).await?;
 
             trace!("Reading files in source directory.");
             if let Some(path) = cli.source {
-                let names = file::FileNames::from_path(path)?;
+                let names = FileNames::from_path(path)?;
                 trace!("Names read: {:?}", names.names().len());
 
                 trace!("Search for docs in specified folder.");
@@ -176,14 +177,14 @@ async fn main() -> Result<(), error::LinkError> {
                     trace!("Specify folder for search.");
                     args.filter(&format!("FolderId eq {}", id));
                     let url = std::env::var("DOCUMENT")?;
-                    let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                    let docs = document::Documents::query(&doc_info, &auth_user).await?;
+                    let doc_info = DocInfo::new(&doc_header, &args, &url);
+                    let docs = Documents::query(&doc_info, &auth_user).await?;
 
                     if let Some(count) = docs.total_count() {
                         info!("Total count of documents in folder: {}", count);
                     }
                     info!("Total size of documents in folder: {}", docs.total_size());
-                    let links = document::DocumentLinks::from(&docs);
+                    let links = DocumentLinks::from(&docs);
                     info!("Links read: {:?}", links.ref_links().len());
                     info!("Names found: {:?}", links.ref_links().keys());
                     trace!("Comparing names of docs in web folder to names in local folder.");
@@ -200,8 +201,8 @@ async fn main() -> Result<(), error::LinkError> {
             info!("Preparing report.");
             let mut records = Vec::new();
             let url = std::env::var("DOCUMENT")?;
-            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-            let total = document::Documents::query(&doc_info, &auth_user).await?;
+            let doc_info = DocInfo::new(&doc_header, &args, &url);
+            let total = Documents::query(&doc_info, &auth_user).await?;
             let folder_list = vec![
                 "GIS",
                 "Address Notifications",
@@ -213,25 +214,25 @@ async fn main() -> Result<(), error::LinkError> {
                 "Unrecorded Parcels",
             ];
             let url = std::env::var("FOLDER")?;
-            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+            let doc_info = DocInfo::new(&doc_header, &args, &url);
             trace!("Set up query data for folders.");
-            let folders = document::Folders::query(&doc_info, &auth_user).await?;
+            let folders = Folders::query(&doc_info, &auth_user).await?;
             for folder in folder_list {
                 if let Some(id) = folders.get_id(folder) {
                     args.filter(&format!("FolderId eq {}", id));
                     let url = std::env::var("DOCUMENT")?;
-                    let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                    let docs = document::Documents::query(&doc_info, &auth_user).await?;
-                    records.push(report::FolderSize::new(folder, docs.total_size()));
+                    let doc_info = DocInfo::new(&doc_header, &args, &url);
+                    let docs = Documents::query(&doc_info, &auth_user).await?;
+                    records.push(FolderSize::new(folder, docs.total_size()));
                 } else {
                     info!("Could not find folder: {}.", folder);
                 }
             }
-            let subtotal = report::FolderSizes::from(records.clone()).size();
-            records.push(report::FolderSize::new("Subtotal", subtotal));
-            records.push(report::FolderSize::new("Total", total.total_size()));
-            let sizes = report::FolderSizes::from(records);
-            if let Ok(mut report) = report::ReportItems::try_from(sizes) {
+            let subtotal = FolderSizes::from(records.clone()).size();
+            records.push(FolderSize::new("Subtotal", subtotal));
+            records.push(FolderSize::new("Total", total.total_size()));
+            let sizes = FolderSizes::from(records);
+            if let Ok(mut report) = ReportItems::try_from(sizes) {
                 if let Some(path) = cli.output {
                     report.to_csv(path.clone())?;
                     info!("Report output to path: {}", path)
@@ -240,9 +241,9 @@ async fn main() -> Result<(), error::LinkError> {
         }
         "folder_count" => {
             let url = std::env::var("FOLDER")?;
-            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+            let doc_info = DocInfo::new(&doc_header, &args, &url);
             trace!("Set up query data for folders.");
-            let folders = document::Folders::query(&doc_info, &auth_user).await?;
+            let folders = Folders::query(&doc_info, &auth_user).await?;
 
             trace!("Search for docs in specified folder.");
             if let Some(id) = folders.get_id(&cli.param) {
@@ -251,8 +252,8 @@ async fn main() -> Result<(), error::LinkError> {
                 args.filter(&format!("FolderId eq {}", id));
                 trace!("Querying documents in folder.");
                 let url = std::env::var("DOCUMENT")?;
-                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                let docs = document::Documents::query(&doc_info, &auth_user).await?;
+                let doc_info = DocInfo::new(&doc_header, &args, &url);
+                let docs = Documents::query(&doc_info, &auth_user).await?;
                 if let Some(count) = docs.total_count() {
                     info!("Total count of documents in folder: {}", count);
                 }
@@ -274,9 +275,9 @@ async fn main() -> Result<(), error::LinkError> {
         }
         "delete_folder_content" => {
             let url = std::env::var("FOLDER")?;
-            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+            let doc_info = DocInfo::new(&doc_header, &args, &url);
             trace!("Set up query data for folders.");
-            let folders = document::Folders::query(&doc_info, &auth_user).await?;
+            let folders = Folders::query(&doc_info, &auth_user).await?;
 
             trace!("Search for docs in specified folder.");
             if let Some(id) = folders.get_id(&cli.param) {
@@ -285,8 +286,8 @@ async fn main() -> Result<(), error::LinkError> {
                 args.filter(&format!("FolderId eq {}", id));
                 trace!("Querying documents in folder.");
                 let url = std::env::var("DOCUMENT")?;
-                let doc_info = document::DocInfo::new(&doc_header, &args, &url);
-                let docs = document::Documents::query(&doc_info, &auth_user).await?;
+                let doc_info = DocInfo::new(&doc_header, &args, &url);
+                let docs = Documents::query(&doc_info, &auth_user).await?;
                 let res = docs.update(&url, &doc_info, &auth_user, "draft").await?;
                 trace!("Response: {:?}", res);
                 let res = docs.delete(&url, &doc_info, &auth_user).await?;
@@ -297,9 +298,9 @@ async fn main() -> Result<(), error::LinkError> {
         }
         "inspect_folder" => {
             let url = std::env::var("FOLDER")?;
-            let doc_info = document::DocInfo::new(&doc_header, &args, &url);
+            let doc_info = DocInfo::new(&doc_header, &args, &url);
             trace!("Set up query data for folders.");
-            let folders = document::Folders::query(&doc_info, &auth_user).await?;
+            let folders = Folders::query(&doc_info, &auth_user).await?;
 
             trace!("Search for docs in specified folder.");
             if let Some(id) = folders.get_id(&cli.param) {
@@ -307,7 +308,7 @@ async fn main() -> Result<(), error::LinkError> {
                     let folder = items
                         .iter()
                         .filter(|i| i.id_ref() == &Some(id))
-                        .collect::<Vec<&document::Folder>>();
+                        .collect::<Vec<&Folder>>();
                     if !folder.is_empty() {
                         info!("{:#?}", folder);
                     }

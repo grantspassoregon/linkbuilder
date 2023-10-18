@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use tracing::{info, trace};
 
+/// Data type for Document responses from the Document Center on CivicEngage.
 #[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Document {
@@ -43,6 +44,7 @@ pub struct Document {
 }
 
 impl Document {
+    /// Upload a document to Document Center on CivicEngage.
     pub async fn upload(
         &self,
         url: &str,
@@ -90,6 +92,7 @@ impl Document {
         }
     }
 
+    /// Update document in Document Center on CivicEngage.
     pub async fn update(
         &self,
         url: &str,
@@ -138,6 +141,7 @@ impl Document {
         }
     }
 
+    /// Delete document from Document Center on CivicEngage.
     pub async fn delete(
         &self,
         url: &str,

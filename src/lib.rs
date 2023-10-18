@@ -1,8 +1,30 @@
+#![warn(missing_docs)]
+//! Library API for managing documents on the CivicEngage platform.
+#![doc(html_logo_url = "https://www.grantspassoregon.gov/DocumentCenter/View/31368/GPLogo_450W-PNG")]
+#![doc(html_playground_url = "https://www.rustexplorer.com/")]
+/// Authorizes users on CivicEngage and stores session tokens.
 pub mod authorize;
+/// Data structures and methods for CivicEngage API responses.
 pub mod document;
+/// Error handling module.
 pub mod error;
+/// Data types for exporting results to csv.
 pub mod export;
+/// Data types for reading file names from local folders.
 pub mod file;
-pub mod import;
+/// Reporting structure for storage on the CivicEngage Document Center.
 pub mod report;
+/// Generic functions accessed by internal modules.
 pub mod utils;
+
+/// Select set of common library features.
+pub mod prelude {
+    pub use crate::authorize::{AuthorizeHeaders, AuthorizeInfo, AuthorizedUser, User};
+    pub use crate::document::{
+        DocInfo, DocQuery, DocumentHeaders, DocumentLinks, Documents, Folder, Folders,
+    };
+    pub use crate::error::{LinkError, LinkResult};
+    pub use crate::export::WebLinks;
+    pub use crate::file::FileNames;
+    pub use crate::report::{FolderSize, FolderSizes, ReportItems};
+}
