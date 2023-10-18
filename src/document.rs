@@ -1,17 +1,22 @@
-use crate::authorize::AuthorizedUser;
+use crate::authorize::{self, AuthorizedUser};
 use crate::error;
-use reqwest::header::{HeaderName, ACCEPT};
-use serde::Deserialize;
+use data_encoding::BASE64;
+use indicatif::ProgressBar;
+use reqwest::header::{HeaderName, ACCEPT, CONTENT_TYPE};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
+use std::io::Read;
+use tracing::{info, trace};
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Document {
     id: i32,
     name: String,
     description: Option<String>,
     status: Option<i32>,
-    file_size: Option<f32>,
+    file_size: Option<f64>,
     created_date: Option<String>,
     created_by: Option<i32>,
     file_uploaded_date: Option<String>,
@@ -38,6 +43,129 @@ pub struct Document {
 }
 
 impl Document {
+    pub async fn upload(
+        &self,
+        url: &str,
+        path: std::path::PathBuf,
+        info: &DocInfo,
+        user: &authorize::AuthorizedUser,
+        publish: bool,
+    ) -> Result<(), error::LinkError> {
+        let mut status = "Draft".to_string();
+        if publish {
+            status = "Published".to_string();
+        }
+        let client = reqwest::Client::new();
+        trace!("Upload client created.");
+        let mut file = std::fs::File::open(path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let enc = BASE64.encode(&data);
+        let body = json!({
+            "Name": self.name,
+            "FileName": format!("{}.pdf", self.name),
+            "File": format!("{}", enc),
+            "FolderId": self.id,
+            "Status": status,
+            "ConvertToPdf": "false",
+            "IsVisible": "false",
+        });
+        let res = client
+            .post(url)
+            .header(CONTENT_TYPE, "application/json")
+            .header(ACCEPT, "application/json")
+            .header(info.headers().api_key(), user.api_key())
+            .header(info.headers().partition(), user.partition())
+            .header(info.headers().user_api_key(), user.user_api_key())
+            .body(body.to_string())
+            .send()
+            .await?;
+        match &res.status() {
+            &reqwest::StatusCode::OK => Ok(res.json().await?),
+            &reqwest::StatusCode::CREATED => Ok(res.json().await?),
+            _ => {
+                info!("Response: {:?}", res.text().await?);
+                Err(error::LinkError::AuthError)
+            }
+        }
+    }
+
+    pub async fn update(
+        &self,
+        url: &str,
+        info: &DocInfo,
+        user: &authorize::AuthorizedUser,
+        command: &str,
+    ) -> Result<String, error::LinkError> {
+        trace!("Doc name: {}", self.name());
+        trace!("Doc id: {}", self.id());
+        trace!("Doc url: {:?}", self.url_ref());
+        let mut doc = self.clone();
+
+        match command {
+            "archive" => {
+                doc.is_archived = Some(true);
+            }
+            "draft" => {
+                doc.status = Some(10);
+            }
+            _ => {}
+        }
+
+        let doc = serde_json::to_string(&doc)?;
+
+        let client = reqwest::Client::new();
+        trace!("Client created for update.");
+        let endpoint = format!("{}/{}", url, self.id());
+
+        let res = client
+            .put(endpoint)
+            .header(CONTENT_TYPE, "application/json")
+            .header(ACCEPT, "application/json")
+            .header(info.headers().api_key(), user.api_key())
+            .header(info.headers().partition(), user.partition())
+            .header(info.headers().user_api_key(), user.user_api_key())
+            .body(doc)
+            .send()
+            .await?;
+        match &res.status() {
+            &reqwest::StatusCode::OK => Ok(res.json().await?),
+            _ => {
+                // info!("Response: {:?}", res.text().await?);
+                // Err(error::LinkError::AuthError)
+                Ok(res.text().await?)
+            }
+        }
+    }
+
+    pub async fn delete(
+        &self,
+        url: &str,
+        info: &DocInfo,
+        user: &authorize::AuthorizedUser,
+    ) -> Result<String, error::LinkError> {
+        let client = reqwest::Client::new();
+        trace!("Client created for delete.");
+        let endpoint = format!("{}/{}", url, self.id());
+        let res = client
+            .delete(endpoint)
+            .header(CONTENT_TYPE, "application/json")
+            .header(ACCEPT, "application/json")
+            .header(info.headers().api_key(), user.api_key())
+            .header(info.headers().partition(), user.partition())
+            .header(info.headers().user_api_key(), user.user_api_key())
+            .send()
+            .await?;
+        match &res.status() {
+            &reqwest::StatusCode::OK => Ok(res.json().await?),
+            _ => {
+                // info!("Response: {:?}", res.text().await?);
+                // Err(error::LinkError::AuthError)
+                Ok(res.text().await?)
+            }
+        }
+    }
+
     pub fn id(&self) -> i32 {
         self.id
     }
@@ -46,8 +174,12 @@ impl Document {
         self.name.to_owned()
     }
 
-    pub fn file_size(&self) -> Option<f32> {
+    pub fn file_size(&self) -> Option<f64> {
         self.file_size.clone()
+    }
+
+    pub fn status_ref(&self) -> &Option<i32> {
+        &self.status
     }
 
     pub fn url(&self) -> Option<String> {
@@ -56,6 +188,14 @@ impl Document {
 
     pub fn url_ref(&self) -> &Option<String> {
         &self.url
+    }
+
+    pub fn is_archived(&self) -> &Option<bool> {
+        &self.is_archived
+    }
+
+    pub fn rss_feed_ref(&self) -> &Option<bool> {
+        &self.show_in_rss_feed
     }
 }
 
@@ -74,6 +214,29 @@ pub struct Documents {
 }
 
 impl Documents {
+    pub async fn update(
+        &self,
+        url: &str,
+        info: &DocInfo,
+        user: &authorize::AuthorizedUser,
+        command: &str,
+    ) -> Result<Vec<String>, error::LinkError> {
+        let mut res = Vec::new();
+        if let Some(docs) = self.source_ref() {
+            let style = indicatif::ProgressStyle::with_template(
+                "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {'Updating files.'}",
+            )
+            .unwrap();
+            let bar = ProgressBar::new(docs.len() as u64);
+            bar.set_style(style);
+            for doc in docs {
+                res.push(doc.update(url, info, user, command).await?);
+                bar.inc(1);
+            }
+        }
+        Ok(res)
+    }
+
     pub async fn query(info: &DocInfo, user: &AuthorizedUser) -> Result<Self, error::LinkError> {
         let client = reqwest::Client::new();
         let res = client
@@ -90,12 +253,20 @@ impl Documents {
         }
     }
 
+    pub fn current_page_ref(&self) -> &Option<i32> {
+        &self.current_page
+    }
+
     pub fn page_size(&self) -> Option<i32> {
         self.page_size.clone()
     }
 
     pub fn total_count(&self) -> Option<i32> {
         self.total_count.clone()
+    }
+
+    pub fn total_pages_ref(&self) -> &Option<i32> {
+        &self.total_pages
     }
 
     pub fn source(&self) -> Option<Vec<Document>> {
@@ -106,7 +277,23 @@ impl Documents {
         &self.source
     }
 
-    pub fn total_size(&self) -> f32 {
+    pub fn sort_by_ref(&self) -> &Option<String> {
+        &self.sort_by
+    }
+
+    pub fn filter_ref(&self) -> &Option<String> {
+        &self.filter
+    }
+
+    pub fn has_previous_page_ref(&self) -> &Option<bool> {
+        &self.has_previous_page
+    }
+
+    pub fn has_next_page_ref(&self) -> &Option<bool> {
+        &self.has_next_page
+    }
+
+    pub fn total_size(&self) -> f64 {
         let mut size = 0.;
         if let Some(docs) = self.source() {
             for doc in docs {
@@ -116,6 +303,28 @@ impl Documents {
             }
         }
         size
+    }
+
+    pub async fn delete(
+        &self,
+        url: &str,
+        info: &DocInfo,
+        user: &authorize::AuthorizedUser,
+    ) -> Result<Vec<String>, error::LinkError> {
+        let mut res = Vec::new();
+        if let Some(docs) = self.source_ref() {
+            let style = indicatif::ProgressStyle::with_template(
+                "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {'Deleting files.'}",
+            )
+            .unwrap();
+            let bar = ProgressBar::new(docs.len() as u64);
+            bar.set_style(style);
+            for doc in docs {
+                res.push(doc.delete(url, info, user).await?);
+                bar.inc(1);
+            }
+        }
+        Ok(res)
     }
 }
 
@@ -317,6 +526,75 @@ pub struct Folders {
     has_next_page: Option<bool>,
 }
 
+impl Folders {
+    pub async fn query(info: &DocInfo, user: &AuthorizedUser) -> Result<Self, error::LinkError> {
+        let client = reqwest::Client::new();
+        let res = client
+            .get(info.query())
+            .header(ACCEPT, "application/json")
+            .header(info.headers().api_key(), user.api_key())
+            .header(info.headers().partition(), user.partition())
+            .header(info.headers().user_api_key(), user.user_api_key())
+            .send()
+            .await?;
+        match &res.status() {
+            &reqwest::StatusCode::OK => Ok(res.json::<Folders>().await?),
+            _ => Err(error::LinkError::AuthError),
+        }
+    }
+
+    pub fn current_page_ref(&self) -> &Option<i32> {
+        &self.current_page
+    }
+
+    pub fn page_size(&self) -> Option<i32> {
+        self.page_size.clone()
+    }
+
+    pub fn total_count(&self) -> Option<i32> {
+        self.total_count.clone()
+    }
+
+    pub fn total_pages_ref(&self) -> &Option<i32> {
+        &self.total_pages
+    }
+
+    pub fn source(&self) -> Option<Vec<Folder>> {
+        self.source.clone()
+    }
+
+    pub fn sort_by_ref(&self) -> &Option<String> {
+        &self.sort_by
+    }
+
+    pub fn filter_ref(&self) -> &Option<String> {
+        &self.filter
+    }
+
+    pub fn has_previous_page_ref(&self) -> &Option<bool> {
+        &self.has_previous_page
+    }
+
+    pub fn has_next_page_ref(&self) -> &Option<bool> {
+        &self.has_next_page
+    }
+
+    pub fn get_id(&self, name: &str) -> Option<i32> {
+        let mut id = None;
+        if let Some(folders) = self.source() {
+            for folder in folders {
+                if name == "Fee in Lieu" {
+                    id = Some(1884);
+                }
+                if folder.name == name && folder.is_archived_ref() == &Some(false) {
+                    id = folder.id;
+                }
+            }
+        }
+        id
+    }
+}
+
 #[derive(Clone, Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct Folder {
@@ -350,44 +628,100 @@ pub struct Folder {
     item_count: Option<i32>,
 }
 
-impl Folders {
-    pub async fn query(info: &DocInfo, user: &AuthorizedUser) -> Result<Self, error::LinkError> {
-        let client = reqwest::Client::new();
-        let res = client
-            .get(info.query())
-            .header(ACCEPT, "application/json")
-            .header(info.headers().api_key(), user.api_key())
-            .header(info.headers().partition(), user.partition())
-            .header(info.headers().user_api_key(), user.user_api_key())
-            .send()
-            .await?;
-        match &res.status() {
-            &reqwest::StatusCode::OK => Ok(res.json::<Folders>().await?),
-            _ => Err(error::LinkError::AuthError),
-        }
+impl Folder {
+    pub fn id_ref(&self) -> &Option<i32> {
+        &self.id
     }
 
-    pub fn page_size(&self) -> Option<i32> {
-        self.page_size.clone()
+    pub fn description_ref(&self) -> &Option<String> {
+        &self.description
     }
 
-    pub fn total_count(&self) -> Option<i32> {
-        self.total_count.clone()
+    pub fn status_ref(&self) -> &Option<i32> {
+        &self.status
     }
 
-    pub fn source(&self) -> Option<Vec<Folder>> {
-        self.source.clone()
+    pub fn path_ref(&self) -> &Option<String> {
+        &self.path
     }
 
-    pub fn get_id(&self, name: &str) -> Option<i32> {
-        let mut id = None;
-        if let Some(folders) = self.source() {
-            for folder in folders {
-                if folder.name == name {
-                    id = folder.id;
-                }
-            }
-        }
-        id
+    pub fn parent_id_ref(&self) -> &Option<i32> {
+        &self.parent_id
+    }
+
+    pub fn created_date_ref(&self) -> &Option<String> {
+        &self.created_date
+    }
+
+    pub fn created_by_ref(&self) -> &Option<i32> {
+        &self.created_by
+    }
+
+    pub fn last_modified_date_ref(&self) -> &Option<String> {
+        &self.last_modified_date
+    }
+
+    pub fn modified_by_ref(&self) -> &Option<i32> {
+        &self.modified_by
+    }
+
+    pub fn is_archived_ref(&self) -> &Option<bool> {
+        &self.is_archived
+    }
+
+    pub fn show_archive_ref(&self) -> &Option<bool> {
+        &self.show_archive
+    }
+
+    pub fn last_archived_date_ref(&self) -> &Option<String> {
+        &self.last_archived_date
+    }
+
+    pub fn update_integration_hub_ref(&self) -> &Option<bool> {
+        &self.update_integration_hub
+    }
+
+    pub fn archived_by_ref(&self) -> &Option<i32> {
+        &self.archived_by
+    }
+
+    pub fn archived_reason_ref(&self) -> &Option<i32> {
+        &self.archived_reason
+    }
+
+    pub fn archived_folder_id_ref(&self) -> &Option<i32> {
+        &self.archived_folder_id
+    }
+
+    pub fn total_folder_size_ref(&self) -> &Option<i32> {
+        &self.total_folder_size
+    }
+
+    pub fn children_exist_ref(&self) -> &Option<bool> {
+        &self.children_exist
+    }
+
+    pub fn url_ref(&self) -> &Option<String> {
+        &self.url
+    }
+
+    pub fn folder_root_ref(&self) -> &Option<i32> {
+        &self.folder_root
+    }
+
+    pub fn department_header_id_ref(&self) -> &Option<i32> {
+        &self.department_header_id
+    }
+
+    pub fn show_archives_ref(&self) -> &Option<bool> {
+        &self.show_archives
+    }
+
+    pub fn permissions_ref(&self) -> &Option<Vec<String>> {
+        &self.permissions
+    }
+
+    pub fn item_count_ref(&self) -> &Option<i32> {
+        &self.item_count
     }
 }

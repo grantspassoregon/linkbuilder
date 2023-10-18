@@ -2,7 +2,7 @@ use crate::error;
 use reqwest::header::{HeaderName, ACCEPT, CONTENT_TYPE};
 use serde::Deserialize;
 use serde_json::json;
-use tracing::info;
+use tracing::{trace, warn};
 
 #[derive(Clone)]
 pub struct User {
@@ -163,7 +163,7 @@ impl AuthorizeInfo {
 
     pub async fn authorize(&self, url: &str) -> Result<AuthResponse, error::LinkError> {
         let client = reqwest::Client::new();
-        info!("Client created.");
+        trace!("Authorization client created.");
         let username = format!("{}@{}", self.user.name, self.user.host);
         let body = json!({
             "Username": username,
@@ -178,10 +178,12 @@ impl AuthorizeInfo {
             .body(body.to_string())
             .send()
             .await?;
-        info!("Status: {}", res.status());
         match &res.status() {
             &reqwest::StatusCode::OK => Ok(res.json::<AuthResponse>().await?),
-            _ => Err(error::LinkError::AuthError),
+            _ => {
+                warn!("Status: {}", res.status());
+                Err(error::LinkError::AuthError)
+            }
         }
     }
 }

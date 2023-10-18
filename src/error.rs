@@ -14,4 +14,10 @@ pub enum LinkError {
     AuthError,
     #[error("Bad file name {0:?}.")]
     FileNameError(std::ffi::OsString),
+    #[error("Conversion to JSON failed.")]
+    JsonError(#[from] serde_json::Error),
+    #[error("Link missing for document.")]
+    MissingLink,
+    #[error("Byte conversion failed.")]
+    ByteError(#[from] byte_unit::ByteError),
 }

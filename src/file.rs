@@ -1,14 +1,13 @@
 use crate::{authorize, document, error};
 use data_encoding::BASE64;
-use pdf::file;
-use reqwest::header::{HeaderName, ACCEPT, CONTENT_TYPE};
+use indicatif::ProgressBar;
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::Read;
-use tracing::info;
+use tracing::{trace, warn};
 
 #[derive(Debug)]
 pub struct FileNames {
@@ -20,7 +19,7 @@ impl FileNames {
         FileNames { names }
     }
 
-    pub fn from_path(path: std::path::PathBuf) -> Result<Self, error::LinkError> {
+    pub fn from_path<P: AsRef<std::path::Path>>(path: P) -> Result<Self, error::LinkError> {
         let files = fs::read_dir(path)?;
         let mut names = HashMap::new();
         for file in files {
@@ -57,23 +56,22 @@ impl FileNames {
         info: &document::DocInfo,
         user: &authorize::AuthorizedUser,
         id: i32,
-    ) -> Result<(), error::LinkError> {
+    ) -> Result<Vec<String>, error::LinkError> {
+        let mut rec = Vec::new();
         let client = reqwest::Client::new();
-        info!("Client created.");
+        trace!("Upload client created.");
 
+        let style = indicatif::ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {'Uploading files.'}",
+        )
+        .unwrap();
+        let bar = ProgressBar::new(self.names().len() as u64);
+        bar.set_style(style);
         for (name, path) in self.names() {
             let mut file = File::open(path)?;
             let mut data = Vec::new();
             file.read_to_end(&mut data)?;
-
-            // let file = file::FileOptions::cached().open(&path).unwrap();
-            // if let Some(ref info) = file.trailer.info_dict {
-            //     let title = info.get("Title").and_then(|p| p.to_string_lossy().ok());
-            //     let author = info.get("Author").and_then(|p| p.to_string_lossy().ok());
-            // }
             let enc = BASE64.encode(&data);
-            // let mut backup = File::create("p:/encode.txt")?;
-            // backup.write_all(&enc.as_bytes())?;
 
             let body = json!({
                 "Name": name,
@@ -84,7 +82,6 @@ impl FileNames {
                 "ConvertToPdf": "false",
                 "IsVisible": "false",
             });
-            info!("Body is: {}", &body);
 
             let res = client
                 .post(url)
@@ -94,23 +91,23 @@ impl FileNames {
                 .header(info.headers().partition(), user.partition())
                 .header(info.headers().user_api_key(), user.user_api_key())
                 .body(body.to_string())
-                //     .build();
-                // info!("Response url: {:?}", res.unwrap().url());
                 .send()
                 .await?;
-            info!("Status: {}", res.status());
-            let status = match &res.status() {
-                &reqwest::StatusCode::OK => Ok(res.json().await?),
-                &reqwest::StatusCode::CREATED => Ok(res.json().await?),
-                _ => {
-                    info!("Response: {:?}", res.text().await?);
-                    Err(error::LinkError::AuthError)
+            bar.inc(1);
+            match &res.status() {
+                &reqwest::StatusCode::OK => {
+                    rec.push(res.json().await?);
                 }
-            };
-            info!("Status: {:?}", status);
+                &reqwest::StatusCode::CREATED => {
+                    rec.push(res.json().await?);
+                }
+                _ => {
+                    warn!("Response: {:?}", res.text().await?);
+                }
+            }
         }
 
-        Ok(())
+        Ok(rec)
     }
 
     pub fn names(&self) -> HashMap<String, std::path::PathBuf> {
