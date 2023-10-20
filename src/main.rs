@@ -1,4 +1,3 @@
-#[doc = include_str!("../README.md")]
 use clap::Parser;
 use linkbuilder::prelude::*;
 use tracing::{info, trace, warn};
@@ -190,7 +189,7 @@ async fn main() -> LinkResult<()> {
                     trace!("Comparing names of docs in web folder to names in local folder.");
                     let diff = names.not_in(&links);
                     info!("Local names not in web folder: {:?}", diff.names().len());
-                    let res = diff.upload(&url, &doc_info, &auth_user, id).await?;
+                    let res = diff.upload(&doc_info, &auth_user, id).await?;
                     info!("Files added to web folder: {:?}", res.len());
                 }
             } else {
@@ -288,9 +287,9 @@ async fn main() -> LinkResult<()> {
                 let url = std::env::var("DOCUMENT")?;
                 let doc_info = DocInfo::new(&doc_header, &args, &url);
                 let docs = Documents::query(&doc_info, &auth_user).await?;
-                let res = docs.update(&url, &doc_info, &auth_user, "draft").await?;
+                let res = docs.update(&doc_info, &auth_user, "draft").await?;
                 trace!("Response: {:?}", res);
-                let res = docs.delete(&url, &doc_info, &auth_user).await?;
+                let res = docs.delete(&doc_info, &auth_user).await?;
                 trace!("Response: {:?}", res);
             } else {
                 info!("Folder not present.");

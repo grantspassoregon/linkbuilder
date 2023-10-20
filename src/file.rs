@@ -9,16 +9,19 @@ use std::fs::File;
 use std::io::Read;
 use tracing::{trace, warn};
 
+/// The `FileNames` struct holds a HashMap of file names and file paths on a local directory.
 #[derive(Debug)]
 pub struct FileNames {
     names: HashMap<String, std::path::PathBuf>,
 }
 
 impl FileNames {
+    /// Creates a new `FileNames` struct from a HashMap of file names and file paths.
     pub fn new(names: HashMap<String, std::path::PathBuf>) -> Self {
         FileNames { names }
     }
 
+    /// Reads files from a local directory specified by `path` into a `FileNames` struct.
     pub fn from_path<P: AsRef<std::path::Path>>(path: P) -> Result<Self, error::LinkError> {
         let files = fs::read_dir(path)?;
         let mut names = HashMap::new();
@@ -35,6 +38,9 @@ impl FileNames {
         Ok(FileNames { names })
     }
 
+    /// Returns the set of key:value pairs in `FileNames` where the key (the file name) is not present
+    /// in `links`.  Used to determine which files on the local folder have not been uploaded to
+    /// the destination folder on the CivicEngage Document Center.
     pub fn not_in(&self, links: &document::DocumentLinks) -> Self {
         let names = self.names.keys().collect::<Vec<&String>>();
         let items = links.ref_links().keys().collect::<Vec<&String>>();
@@ -50,9 +56,12 @@ impl FileNames {
         FileNames::new(diff)
     }
 
+    /// Upload files in `FileNames` from local storage to the CivicEngage Document Center.  Check
+    /// to make sure the files are not already located on the Document Center using
+    /// [`FileNames::not_in()`].  Duplicate files will upload to the Document Center under a unique
+    /// ID and will not overwrite files in the Document Center folder with the same name.
     pub async fn upload(
         &self,
-        url: &str,
         info: &document::DocInfo,
         user: &authorize::AuthorizedUser,
         id: i32,
@@ -84,7 +93,7 @@ impl FileNames {
             });
 
             let res = client
-                .post(url)
+                .post(info.url_ref())
                 .header(CONTENT_TYPE, "application/json")
                 .header(ACCEPT, "application/json")
                 .header(info.headers().api_key(), user.api_key())
@@ -110,6 +119,8 @@ impl FileNames {
         Ok(rec)
     }
 
+    /// The `names` field holds a HashMap of file names and file paths.  This function returns the
+    /// cloned value of the field.
     pub fn names(&self) -> HashMap<String, std::path::PathBuf> {
         self.names.clone()
     }

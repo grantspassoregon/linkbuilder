@@ -1,3 +1,8 @@
+//! Error handling module for the library.
+//!
+//! Creates a custom Error type `LinkError`, and an alias
+//! for Result using the `LinkError`, called `LinkResult`.
+
 /// The LinkError enum takes failure types from different libraries and converts them to a variant
 /// of LinkError using the framework from the thiserror library.
 #[derive(thiserror::Error, Debug)]

@@ -1,3 +1,35 @@
+//! Authorizes users on CivicEngage and stores session tokens.
+//!
+//! # Example
+//! ```rust
+//! # use linkbuilder::prelude::{AuthorizeHeaders, AuthorizeInfo, AuthorizedUser, LinkError, LinkResult, User};
+//! # #[tokio::main]
+//! # async fn main() -> LinkResult<()> {
+//! // Load sensitive data from .env file.
+//! dotenv::dotenv().ok();
+//! let api_key = std::env::var("API_KEY")?;
+//! let partition = std::env::var("PARTITION")?;
+//! let name = std::env::var("USERNAME")?;
+//! let password = std::env::var("PASSWORD")?;
+//! let host = std::env::var("HOST")?;
+//!
+//! // Load user credentials.
+//! let user = User::new()
+//!     .api_key(&api_key)
+//!     .partition(&partition)
+//!     .name(&name)
+//!     .password(&password)
+//!     .host(&host)
+//!     .build()?;
+//! let headers = AuthorizeHeaders::default();
+//! let auth_info = AuthorizeInfo::new(&user, headers);
+//!
+//! // Authenticate user.
+//! let url = std::env::var("AUTHENTICATE")?;
+//! let response = auth_info.authorize(&url).await?;
+//! let auth_user = AuthorizedUser::new(&user, &response);
+//! # Ok(())
+//! # }
 use crate::error;
 use reqwest::header::{HeaderName, ACCEPT, CONTENT_TYPE};
 use serde::Deserialize;

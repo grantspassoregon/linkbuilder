@@ -1,12 +1,11 @@
 #![warn(missing_docs)]
-//! Library API for managing documents on the CivicEngage platform.
-#![doc(html_logo_url = "https://www.grantspassoregon.gov/DocumentCenter/View/31368/GPLogo_450W-PNG")]
-#![doc(html_playground_url = "https://www.rustexplorer.com/")]
-/// Authorizes users on CivicEngage and stores session tokens.
+#![doc = include_str!("../README.md")]
+#![doc(
+    html_logo_url = "https://www.grantspassoregon.gov/DocumentCenter/View/31368/GPLogo_450W-PNG"
+)]
+#![doc(html_playground_url = "https://play.rust-lang.org/")]
 pub mod authorize;
-/// Data structures and methods for CivicEngage API responses.
 pub mod document;
-/// Error handling module.
 pub mod error;
 /// Data types for exporting results to csv.
 pub mod export;
