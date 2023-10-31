@@ -20,10 +20,11 @@ pub mod utils;
 pub mod prelude {
     pub use crate::authorize::{AuthorizeHeaders, AuthorizeInfo, AuthorizedUser, User};
     pub use crate::document::{
-        DocInfo, DocQuery, DocumentHeaders, DocumentLinks, Documents, Folder, Folders,
+        DocInfo, DocQuery, DocumentHeaders, DocumentLinks, Documents, Folder, Folders, LinkUpdater,
     };
     pub use crate::error::{LinkError, LinkResult};
     pub use crate::export::WebLinks;
     pub use crate::file::FileNames;
     pub use crate::report::{FolderSize, FolderSizes, ReportItems};
+    pub use crate::utils::load_user;
 }

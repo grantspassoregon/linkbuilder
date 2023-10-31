@@ -51,8 +51,7 @@
 //! }
 //! # Ok(())
 //! # }
-use crate::authorize::{self, AuthorizedUser};
-use crate::error;
+use crate::prelude::*;
 use data_encoding::BASE64;
 use indicatif::ProgressBar;
 use reqwest::header::{HeaderName, ACCEPT, CONTENT_TYPE};
@@ -60,7 +59,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::Read;
-use tracing::{info, trace};
+use tracing::{info, trace, warn};
 
 /// Data type for Document responses from the Document Center on CivicEngage.
 #[derive(Clone, Deserialize, Debug, Serialize)]
@@ -102,9 +101,9 @@ impl Document {
         &self,
         path: std::path::PathBuf,
         info: &DocInfo,
-        user: &authorize::AuthorizedUser,
+        user: &AuthorizedUser,
         publish: bool,
-    ) -> Result<(), error::LinkError> {
+    ) -> LinkResult<()> {
         let mut status = "Draft".to_string();
         if publish {
             status = "Published".to_string();
@@ -139,7 +138,7 @@ impl Document {
             &reqwest::StatusCode::CREATED => Ok(res.json().await?),
             _ => {
                 info!("Response: {:?}", res.text().await?);
-                Err(error::LinkError::AuthError)
+                Err(LinkError::AuthError)
             }
         }
     }
@@ -150,9 +149,9 @@ impl Document {
     pub async fn update(
         &self,
         info: &DocInfo,
-        user: &authorize::AuthorizedUser,
+        user: &AuthorizedUser,
         command: &str,
-    ) -> Result<String, error::LinkError> {
+    ) -> LinkResult<String> {
         trace!("Doc name: {}", self.name());
         trace!("Doc id: {}", self.id());
         trace!("Doc url: {:?}", self.url_ref());
@@ -191,11 +190,7 @@ impl Document {
     }
 
     /// Delete document from Document Center on CivicEngage.  Called by [`Documents::delete()`].
-    pub async fn delete(
-        &self,
-        info: &DocInfo,
-        user: &authorize::AuthorizedUser,
-    ) -> Result<String, error::LinkError> {
+    pub async fn delete(&self, info: &DocInfo, user: &AuthorizedUser) -> LinkResult<String> {
         let client = reqwest::Client::new();
         trace!("Client created for delete.");
         let endpoint = format!("{}/{}", info.url_ref(), self.id());
@@ -341,9 +336,9 @@ impl Documents {
     pub async fn update(
         &self,
         info: &DocInfo,
-        user: &authorize::AuthorizedUser,
+        user: &AuthorizedUser,
         command: &str,
-    ) -> Result<Vec<String>, error::LinkError> {
+    ) -> LinkResult<Vec<String>> {
         let mut res = Vec::new();
         if let Some(docs) = self.source_ref() {
             let style = indicatif::ProgressStyle::with_template(
@@ -362,7 +357,7 @@ impl Documents {
 
     /// Sends a search request to the Document Center using the query parameters from `info`.
     /// Calls [`DocInfo::query()`], which calls [`DocQuery::query()`].
-    pub async fn query(info: &DocInfo, user: &AuthorizedUser) -> Result<Self, error::LinkError> {
+    pub async fn query(info: &DocInfo, user: &AuthorizedUser) -> LinkResult<Self> {
         let client = reqwest::Client::new();
         let res = client
             .get(info.query())
@@ -374,7 +369,7 @@ impl Documents {
             .await?;
         match &res.status() {
             &reqwest::StatusCode::OK => Ok(res.json::<Documents>().await?),
-            _ => Err(error::LinkError::AuthError),
+            _ => Err(LinkError::AuthError),
         }
     }
 
@@ -505,11 +500,7 @@ impl Documents {
     /// }
     /// # Ok(())
     /// # }
-    pub async fn delete(
-        &self,
-        info: &DocInfo,
-        user: &authorize::AuthorizedUser,
-    ) -> Result<Vec<String>, error::LinkError> {
+    pub async fn delete(&self, info: &DocInfo, user: &AuthorizedUser) -> LinkResult<Vec<String>> {
         let mut res = Vec::new();
         if let Some(docs) = self.source_ref() {
             let style = indicatif::ProgressStyle::with_template(
@@ -528,7 +519,7 @@ impl Documents {
 }
 
 /// Holds headers for calls to the Document endpoint on CivicEngage.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DocumentHeaders {
     api_key: HeaderName,
     partition: HeaderName,
@@ -757,7 +748,7 @@ impl From<&Documents> for DocumentLinks {
 }
 
 /// Data type for a paginated list of type [`Folder`] response from the Document Center on CivicEngage.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct Folders {
     current_page: Option<i32>,
@@ -773,7 +764,7 @@ pub struct Folders {
 
 impl Folders {
     /// Submits a query request based upon parameters set in `info`.  Calls [`DocInfo::query()`].
-    pub async fn query(info: &DocInfo, user: &AuthorizedUser) -> Result<Self, error::LinkError> {
+    pub async fn query(info: &DocInfo, user: &AuthorizedUser) -> LinkResult<Self> {
         let client = reqwest::Client::new();
         let res = client
             .get(info.query())
@@ -785,7 +776,7 @@ impl Folders {
             .await?;
         match &res.status() {
             &reqwest::StatusCode::OK => Ok(res.json::<Folders>().await?),
-            _ => Err(error::LinkError::AuthError),
+            _ => Err(LinkError::AuthError),
         }
     }
 
@@ -1040,5 +1031,145 @@ impl Folder {
     /// to the field.
     pub fn item_count_ref(&self) -> &Option<i32> {
         &self.item_count
+    }
+}
+
+/// The `LinkUpdaterBuilder` struct is a builder struct for the [`LinkUpdater`], allowing the user
+/// to construct the object incrementally.
+#[derive(Default)]
+pub struct LinkUpdaterBuilder {
+    folders: Option<Folders>,
+    headers: Option<DocumentHeaders>,
+    args: Option<DocQuery>,
+    url: Option<String>,
+    user: Option<AuthorizedUser>,
+    output: Option<String>,
+}
+
+impl LinkUpdaterBuilder {
+    /// The `new` function creates an empty `LinkUpdaterBuilder` struct with all fields set to
+    /// None.
+    pub fn new() -> LinkUpdaterBuilder {
+        LinkUpdaterBuilder::default()
+    }
+
+    /// The `folders()` function sets the value of the `folders` field to `value`.
+    pub fn folders(&mut self, value: &Folders) -> &mut Self {
+        self.folders = Some(value.clone());
+        self
+    }
+
+    /// The `headers()` function sets the value of the `headers` field to `value`.
+    pub fn headers(&mut self, value: &DocumentHeaders) -> &mut Self {
+        self.headers = Some(value.clone());
+        self
+    }
+
+    /// The `args()` function sets the value of the `args` field to `value`.
+    pub fn args(&mut self, value: &DocQuery) -> &mut Self {
+        self.args = Some(value.clone());
+        self
+    }
+
+    /// The `url()` function sets the value of the `url` field to `value`.
+    pub fn url(&mut self, value: &str) -> &mut Self {
+        self.url = Some(value.into());
+        self
+    }
+
+    /// The `user()` function sets the value of the `user` field to `value`.
+    pub fn user(&mut self, value: &AuthorizedUser) -> &mut Self {
+        self.user = Some(value.clone());
+        self
+    }
+
+    /// The `output()` function sets the value of the `output` field to `value`.
+    pub fn output(&mut self, value: &Option<String>) -> LinkResult<&mut Self> {
+        match value {
+            Some(_) => {
+                self.output = value.clone();
+                Ok(self)
+            }
+            None => {
+                warn!("Missing output parameter.");
+                Err(LinkError::BuildError)
+            }
+        }
+    }
+
+    /// The `build()` function returns a complete [`LinkUpdater`] struct if all the fields have
+    /// been set.
+    pub fn build(&self) -> LinkResult<LinkUpdater> {
+        if let Some(folders) = self.folders.clone() {
+            if let Some(headers) = self.headers.clone() {
+                if let Some(args) = self.args.clone() {
+                    if let Some(url) = self.url.clone() {
+                        if let Some(user) = self.user.clone() {
+                            if let Some(output) = self.output.clone() {
+                                Ok(LinkUpdater {
+                                    folders,
+                                    headers,
+                                    args,
+                                    url,
+                                    user,
+                                    output,
+                                })
+                            } else {
+                                Err(LinkError::BuildError)
+                            }
+                        } else {
+                            Err(LinkError::BuildError)
+                        }
+                    } else {
+                        Err(LinkError::BuildError)
+                    }
+                } else {
+                    Err(LinkError::BuildError)
+                }
+            } else {
+                Err(LinkError::BuildError)
+            }
+        } else {
+            Err(LinkError::BuildError)
+        }
+    }
+}
+
+/// The `LinkUpdater` struct holds required fields for updating link files.
+#[derive(Clone, Default, Debug)]
+pub struct LinkUpdater {
+    folders: Folders,
+    headers: DocumentHeaders,
+    args: DocQuery,
+    url: String,
+    user: AuthorizedUser,
+    output: String,
+}
+
+impl LinkUpdater {
+    /// The `new()` method creates an empty [`LinkUpdaterBuilder`].  Set the empty fields and
+    /// call [`LinkUpdaterBuilder::build()`] to create a new `LinkUpdater`.
+    pub fn new() -> LinkUpdaterBuilder {
+        LinkUpdaterBuilder::new()
+    }
+
+    /// The `get_links()` method searches for links in folder `folder` and outputs a link file.
+    pub async fn get_links(&self, folder: &str, file: &str) -> LinkResult<()> {
+        if let Some(id) = self.folders.get_id(folder) {
+            trace!("Folder id: {:?}", id);
+            trace!("Specify folder for search.");
+            let mut args = self.args.clone();
+            args.filter(&format!("FolderId eq {}", id));
+            let doc_info = DocInfo::new(&self.headers, &args, &self.url);
+            let docs = Documents::query(&doc_info, &self.user).await?;
+            let links = DocumentLinks::from(&docs);
+            let mut linked = WebLinks::from(&links);
+            let link_path = format!("{}/{}.csv", self.output, file);
+            linked.to_csv(&link_path)?;
+            info!("Links printed to {}", &link_path);
+        } else {
+            warn!("Folder name {} not found.", folder);
+        }
+        Ok(())
     }
 }

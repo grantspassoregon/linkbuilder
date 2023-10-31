@@ -13,6 +13,9 @@ pub enum LinkError {
         /// Vector of fields passed into UserBuilder that triggered the error.
         value: Vec<String>,
     },
+    /// Produced by calling build on a builder with incomplete fields.
+    #[error("Required values not provided.")]
+    BuildError,
     /// Error returned by the reqwest library.
     #[error("HTTP request error.")]
     HttpError(#[from] reqwest::Error),

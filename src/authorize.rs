@@ -364,6 +364,7 @@ impl AuthResponse {
 }
 
 /// Struct holding credentials for authorized users on CivicEngage.
+#[derive(Clone, Debug, Default)]
 pub struct AuthorizedUser {
     api_key: String,
     partition: String,
